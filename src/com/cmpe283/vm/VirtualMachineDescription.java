@@ -4,12 +4,13 @@ import com.vmware.vim25.mo.VirtualMachine;
 
 public class VirtualMachineDescription {
 	private VirtualMachine vm;
-	
+
 	public VirtualMachineDescription(VirtualMachine vm) throws Exception {
-		if(vm == null) throw new Exception("Virtual Machine is null.");
+		if (vm == null)
+			throw new Exception("Virtual Machine is null.");
 		this.vm = vm;
 	}
-	
+
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
@@ -24,7 +25,7 @@ public class VirtualMachineDescription {
 		sb.append(String.format("IP Addresses: ", vm.getSummary().getGuest().getIpAddress()));
 		sb.append(String.format("State: %s" + vm.getGuest().guestState));
 		sb.append("----------------------------");
-		
+
 		return sb.toString();
 	}
 }

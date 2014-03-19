@@ -6,14 +6,13 @@ import java.util.logging.Logger;
 import com.vmware.vim25.mo.VirtualMachine;
 
 public class AvailabilityManager {
-	private static final Logger logger = Logger
-			.getLogger(AvailabilityManager.class.getName());
-	
-	private static VirtualMachineManager VMManager;
+	private static final Logger logger = Logger.getLogger(AvailabilityManager.class.getName());
+
+	private static VcenterManager VMManager;
 
 	public AvailabilityManager() {
 		try {
-			VMManager = new VirtualMachineManager();
+			VMManager = new VcenterManager();
 			if (VMManager == null)
 				throw new Exception("VM Manager cannot be initialized");
 		} catch (Exception e) {
@@ -30,8 +29,7 @@ public class AvailabilityManager {
 		try {
 			List<VirtualMachine> vms = VMManager.getVMs();
 			for (VirtualMachine vm : vms) {
-				VirtualMachineDescription vmDesc = new VirtualMachineDescription(
-						vm);
+				VirtualMachineDescription vmDesc = new VirtualMachineDescription(vm);
 				System.out.println(vmDesc);
 			}
 		} catch (Exception e) {
@@ -39,5 +37,5 @@ public class AvailabilityManager {
 			logger.warning(e.getMessage());
 		}
 	}
-	
+
 }

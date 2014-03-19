@@ -12,10 +12,9 @@ import com.vmware.vim25.mo.VirtualMachine;
 import com.vmware.vim25.mo.VirtualMachineSnapshot;
 
 public class SnapshotManager {
-	private static final Logger logger = Logger.getLogger(SnapshotManager.class
-			.getName());
+	private static final Logger logger = Logger.getLogger(SnapshotManager.class.getName());
 
-	private static VirtualMachineManager VMManager;
+	private static VcenterManager VMManager;
 
 	private static HashMap<String, String> SnapshotMap;
 
@@ -24,7 +23,7 @@ public class SnapshotManager {
 	public SnapshotManager() {
 		try {
 			SnapshotMap = new HashMap<String, String>();
-			VMManager = new VirtualMachineManager();
+			VMManager = new VcenterManager();
 			if (VMManager == null)
 				throw new Exception("VM Manager cannot be initialized");
 		} catch (Exception e) {
@@ -52,7 +51,7 @@ public class SnapshotManager {
 				for (String vmName : SnapshotMap.keySet()) {
 					create(vmName, "latest_snapshot", "");
 				}
-				
+
 				Thread.sleep(interval);
 			}
 		} catch (Exception e) {
@@ -65,21 +64,15 @@ public class SnapshotManager {
 		stopBackup = true;
 	}
 
-	private boolean create(String vmName, String snapshotName,
-			String snapshotDescription) {
+	private boolean create(String vmName, String snapshotName, String snapshotDescription) {
 
 		try {
 			VirtualMachine vm = VMManager.getVmByName(vmName);
 
-			Task task = vm.createSnapshot_Task(snapshotName,
-					snapshotDescription, false, false);
+			Task task = vm.createSnapshot_Task(snapshotName, snapshotDescription, false, false);
 
-			if (task.waitForMe() == Task.SUCCESS) {
-				System.out
-						.println(String
-								.format("Snapshot was created. vmName: %s, snapshotName: %s, description: %s",
-										vmName, snapshotName,
-										snapshotDescription));
+			if (task.waitForTask() == Task.SUCCESS) {
+				System.out.println(String.format("Snapshot was created. vmName: %s, snapshotName: %s, description: %s", vmName, snapshotName, snapshotDescription));
 				SnapshotMap.put(vmName, snapshotName);
 				return true;
 			}
@@ -97,8 +90,7 @@ public class SnapshotManager {
 			VirtualMachine vm = VMManager.getVmByName(vmName);
 
 			VirtualMachineSnapshotInfo snapInfo = vm.getSnapshot();
-			VirtualMachineSnapshotTree[] snapTree = snapInfo
-					.getRootSnapshotList();
+			VirtualMachineSnapshotTree[] snapTree = snapInfo.getRootSnapshotList();
 
 			printSnapshots(snapTree);
 
@@ -115,8 +107,7 @@ public class SnapshotManager {
 		for (int i = 0; i < snapTree.length; i++) {
 			VirtualMachineSnapshotTree node = snapTree[i];
 			System.out.println("Snapshot Name : " + node.getName());
-			VirtualMachineSnapshotTree[] childTree = node
-					.getChildSnapshotList();
+			VirtualMachineSnapshotTree[] childTree = node.getChildSnapshotList();
 			if (childTree != null) {
 				printSnapshots(childTree);
 			}
@@ -131,10 +122,8 @@ public class SnapshotManager {
 
 			if (vmsnap != null) {
 				Task task = vmsnap.revertToSnapshot_Task(null);
-				if (task.waitForMe() == Task.SUCCESS) {
-					System.out.println(String.format(
-							"VM %s is reverted to snapshot: %s", vmName,
-							snapshotName));
+				if (task.waitForTask() == Task.SUCCESS) {
+					System.out.println(String.format("VM %s is reverted to snapshot: %s", vmName, snapshotName));
 					return true;
 				}
 			}
@@ -147,17 +136,14 @@ public class SnapshotManager {
 		return false;
 	}
 
-	private VirtualMachineSnapshot getSnapshotInTree(VirtualMachine vm,
-			String snapshotName) {
+	private VirtualMachineSnapshot getSnapshotInTree(VirtualMachine vm, String snapshotName) {
 		if (vm == null || snapshotName == null) {
 			return null;
 		}
 
-		VirtualMachineSnapshotTree[] snapTree = vm.getSnapshot()
-				.getRootSnapshotList();
+		VirtualMachineSnapshotTree[] snapTree = vm.getSnapshot().getRootSnapshotList();
 		if (snapTree != null) {
-			ManagedObjectReference mor = findSnapshotInTree(snapTree,
-					snapshotName);
+			ManagedObjectReference mor = findSnapshotInTree(snapTree, snapshotName);
 			if (mor != null) {
 				return new VirtualMachineSnapshot(vm.getServerConnection(), mor);
 			}
@@ -165,18 +151,15 @@ public class SnapshotManager {
 		return null;
 	}
 
-	private ManagedObjectReference findSnapshotInTree(
-			VirtualMachineSnapshotTree[] snapTree, String snapshotName) {
+	private ManagedObjectReference findSnapshotInTree(VirtualMachineSnapshotTree[] snapTree, String snapshotName) {
 		for (int i = 0; i < snapTree.length; i++) {
 			VirtualMachineSnapshotTree node = snapTree[i];
 			if (snapshotName.equals(node.getName())) {
 				return node.getSnapshot();
 			} else {
-				VirtualMachineSnapshotTree[] childTree = node
-						.getChildSnapshotList();
+				VirtualMachineSnapshotTree[] childTree = node.getChildSnapshotList();
 				if (childTree != null) {
-					ManagedObjectReference mor = findSnapshotInTree(childTree,
-							snapshotName);
+					ManagedObjectReference mor = findSnapshotInTree(childTree, snapshotName);
 					if (mor != null) {
 						return mor;
 					}
@@ -186,17 +169,15 @@ public class SnapshotManager {
 		return null;
 	}
 
-	private boolean remove(String vmName, String snapshotName,
-			boolean removechild) {
+	private boolean remove(String vmName, String snapshotName, boolean removechild) {
 		try {
 			VirtualMachine vm = VMManager.getVmByName(vmName);
 
 			VirtualMachineSnapshot vmsnap = getSnapshotInTree(vm, snapshotName);
 			if (vmsnap != null) {
 				Task task = vmsnap.removeSnapshot_Task(removechild);
-				if (task.waitForMe() == Task.SUCCESS) {
-					System.out.println(String.format("Removed snapshot: %s",
-							snapshotName));
+				if (task.waitForTask() == Task.SUCCESS) {
+					System.out.println(String.format("Removed snapshot: %s", snapshotName));
 					return true;
 				}
 			}
@@ -209,13 +190,12 @@ public class SnapshotManager {
 		return false;
 	}
 
-	private boolean removeAll(String vmName, String snapshotName,
-			boolean removechild) {
+	private boolean removeAll(String vmName, String snapshotName, boolean removechild) {
 		try {
 			VirtualMachine vm = VMManager.getVmByName(vmName);
 
 			Task task = vm.removeAllSnapshots_Task();
-			if (task.waitForMe() == Task.SUCCESS) {
+			if (task.waitForTask() == Task.SUCCESS) {
 				System.out.println("Removed all snapshots");
 				return true;
 			}
