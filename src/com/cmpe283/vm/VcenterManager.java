@@ -6,18 +6,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
-import com.vmware.vim25.FileFault;
+import com.vmware.vim25.Action;
+import com.vmware.vim25.AlarmAction;
+import com.vmware.vim25.AlarmSetting;
+import com.vmware.vim25.AlarmSpec;
+import com.vmware.vim25.AlarmTriggeringAction;
 import com.vmware.vim25.HostVMotionCompatibility;
-import com.vmware.vim25.InsufficientResourcesFault;
 import com.vmware.vim25.InvalidProperty;
-import com.vmware.vim25.InvalidState;
 import com.vmware.vim25.ManagedEntityStatus;
+import com.vmware.vim25.MethodAction;
+import com.vmware.vim25.MethodActionArgument;
 import com.vmware.vim25.RuntimeFault;
-import com.vmware.vim25.TaskInProgress;
+import com.vmware.vim25.StateAlarmExpression;
+import com.vmware.vim25.StateAlarmOperator;
 import com.vmware.vim25.TaskInfo;
 import com.vmware.vim25.VirtualMachineMovePriority;
 import com.vmware.vim25.VirtualMachinePowerState;
-import com.vmware.vim25.VmConfigFault;
+import com.vmware.vim25.mo.Alarm;
+import com.vmware.vim25.mo.AlarmManager;
 import com.vmware.vim25.mo.ComputeResource;
 import com.vmware.vim25.mo.Folder;
 import com.vmware.vim25.mo.HostSystem;
@@ -37,7 +43,7 @@ public class VcenterManager {
 	public VcenterManager() {
 		try {
 			ServiceInstance =
-					new ServiceInstance(new URL(VCenterSettings.URL), VCenterSettings.USER_NAME, VCenterSettings.PASSWORD, true);
+					new ServiceInstance(new URL(VcenterSettings.URL), VcenterSettings.USER_NAME, VcenterSettings.PASSWORD, true);
 			if (ServiceInstance == null)
 				throw new Exception("ServiceInstance cannot be initialized");
 		} catch (Exception e) {
@@ -59,6 +65,23 @@ public class VcenterManager {
 			throw new Exception("vm is null");
 
 		return vm;
+	}
+
+	/*
+	 * 1. Gather statistics (such as CPU, I/O, network etc) for a VM and display
+	 * in a text format
+	 */
+	public void showStatistics() {
+		try {
+			List<VirtualMachine> vms = getVMs();
+			for (VirtualMachine vm : vms) {
+				VirtualMachineDescription vmDesc = new VirtualMachineDescription(vm);
+				System.out.println(vmDesc);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
 	}
 
 	public HostSystem getVhostByName(String hostName) throws Exception {
@@ -134,15 +157,16 @@ public class VcenterManager {
 			boolean isVhostAvailable = false;
 
 			for (int i = 0; i < 10; i++) {
-				
+
 				isVhostAvailable = checkVhostStatus(newHost);
-				if (isVhostAvailable) break;
+				if (isVhostAvailable)
+					break;
 
 				Thread.sleep(2000);
 			}
 
 			if (!isVhostAvailable) {
-				//todo: remove vhost
+				// todo: remove vhost
 				return false;
 			}
 
@@ -240,5 +264,84 @@ public class VcenterManager {
 
 	public void turnOffFailOver() {
 		isFailoverOn = false;
+	}
+
+	/*
+	 * 6. Setup alarm on VM power off. If a VM is powered off by a user, then it
+	 * should be able to prevent a failover from occurring. (A VM is not failed
+	 * in this case by powered off by a user)
+	 */
+
+	public void setPowerOffAlarm() {
+		AlarmManager alarmMgr = ServiceInstance.getAlarmManager();
+
+		try {
+			for (VirtualMachine vm : getVMs()) {
+				
+				AlarmSpec spec = buildAlarmSpec("VmPowerOffAlarm." + vm.getName());
+				
+				Alarm[] alarms = alarmMgr.getAlarm(vm);
+
+				for (Alarm alarm : alarms) {
+					if (alarm.getAlarmInfo().getName().equals(spec.getName())) {
+						alarm.removeAlarm();
+					}
+				}
+
+				alarmMgr.createAlarm(vm, spec);
+				
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+
+	}
+
+	private AlarmSpec buildAlarmSpec(String alarmName) {
+		AlarmSpec spec = new AlarmSpec();
+
+		StateAlarmExpression expression = createStateAlarmExpression();
+
+		AlarmAction methodAction = createAlarmTriggerAction(createPowerOffAction());
+
+		// spec.setAction(methodAction);
+		spec.setExpression(expression);
+		spec.setName(alarmName);
+		spec.setDescription("Monitor VM state and trigger some alarm actions");
+		spec.setEnabled(true);
+
+		AlarmSetting as = new AlarmSetting();
+		as.setReportingFrequency(0); // as often as possible
+		as.setToleranceRange(0);
+
+		spec.setSetting(as);
+
+		return spec;
+	}
+
+	private AlarmTriggeringAction createAlarmTriggerAction(Action action) {
+		AlarmTriggeringAction alarmAction = new AlarmTriggeringAction();
+		alarmAction.setYellow2red(true);
+		alarmAction.setAction(action);
+		return alarmAction;
+	}
+
+	private StateAlarmExpression createStateAlarmExpression() {
+		StateAlarmExpression expression = new StateAlarmExpression();
+		expression.setType("VirtualMachine");
+		expression.setStatePath("runtime.powerState");
+		expression.setOperator(StateAlarmOperator.isEqual);
+		expression.setRed("poweredOff");
+		return expression;
+	}
+
+	private MethodAction createPowerOffAction() {
+		MethodAction action = new MethodAction();
+		action.setName("PowerOffVM_Task");
+		MethodActionArgument argument = new MethodActionArgument();
+		argument.setValue(null);
+		action.setArgument(new MethodActionArgument[] { argument });
+		return action;
 	}
 }

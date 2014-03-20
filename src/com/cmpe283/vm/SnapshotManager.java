@@ -14,7 +14,7 @@ import com.vmware.vim25.mo.VirtualMachineSnapshot;
 public class SnapshotManager {
 	private static final Logger logger = Logger.getLogger(SnapshotManager.class.getName());
 
-	private static VcenterManager VMManager;
+	private static VcenterManager VcenterManager;
 
 	private static HashMap<String, String> SnapshotMap;
 
@@ -23,8 +23,8 @@ public class SnapshotManager {
 	public SnapshotManager() {
 		try {
 			SnapshotMap = new HashMap<String, String>();
-			VMManager = new VcenterManager();
-			if (VMManager == null)
+			VcenterManager = new VcenterManager();
+			if (VcenterManager == null)
 				throw new Exception("VM Manager cannot be initialized");
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -42,7 +42,7 @@ public class SnapshotManager {
 
 		SnapshotMap.clear();
 		try {
-			List<VirtualMachine> vms = VMManager.getVMs();
+			List<VirtualMachine> vms = VcenterManager.getVMs();
 			for (VirtualMachine vm : vms) {
 				SnapshotMap.put(vm.getName(), null);
 			}
@@ -67,7 +67,7 @@ public class SnapshotManager {
 	private boolean create(String vmName, String snapshotName, String snapshotDescription) {
 
 		try {
-			VirtualMachine vm = VMManager.getVmByName(vmName);
+			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
 			Task task = vm.createSnapshot_Task(snapshotName, snapshotDescription, false, false);
 
@@ -87,7 +87,7 @@ public class SnapshotManager {
 
 	private void list(String vmName) {
 		try {
-			VirtualMachine vm = VMManager.getVmByName(vmName);
+			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
 			VirtualMachineSnapshotInfo snapInfo = vm.getSnapshot();
 			VirtualMachineSnapshotTree[] snapTree = snapInfo.getRootSnapshotList();
@@ -116,7 +116,7 @@ public class SnapshotManager {
 
 	private boolean revert(String vmName, String snapshotName) {
 		try {
-			VirtualMachine vm = VMManager.getVmByName(vmName);
+			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
 			VirtualMachineSnapshot vmsnap = getSnapshotInTree(vm, snapshotName);
 
@@ -171,7 +171,7 @@ public class SnapshotManager {
 
 	private boolean remove(String vmName, String snapshotName, boolean removechild) {
 		try {
-			VirtualMachine vm = VMManager.getVmByName(vmName);
+			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
 			VirtualMachineSnapshot vmsnap = getSnapshotInTree(vm, snapshotName);
 			if (vmsnap != null) {
@@ -192,7 +192,7 @@ public class SnapshotManager {
 
 	private boolean removeAll(String vmName, String snapshotName, boolean removechild) {
 		try {
-			VirtualMachine vm = VMManager.getVmByName(vmName);
+			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
 			Task task = vm.removeAllSnapshots_Task();
 			if (task.waitForTask() == Task.SUCCESS) {
