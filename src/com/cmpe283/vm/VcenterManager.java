@@ -11,6 +11,8 @@ import com.vmware.vim25.AlarmAction;
 import com.vmware.vim25.AlarmSetting;
 import com.vmware.vim25.AlarmSpec;
 import com.vmware.vim25.AlarmTriggeringAction;
+import com.vmware.vim25.ComputeResourceConfigSpec;
+import com.vmware.vim25.HostConnectSpec;
 import com.vmware.vim25.HostVMotionCompatibility;
 import com.vmware.vim25.InvalidProperty;
 import com.vmware.vim25.ManagedEntityStatus;
@@ -25,10 +27,12 @@ import com.vmware.vim25.VirtualMachinePowerState;
 import com.vmware.vim25.mo.Alarm;
 import com.vmware.vim25.mo.AlarmManager;
 import com.vmware.vim25.mo.ComputeResource;
+import com.vmware.vim25.mo.Datacenter;
 import com.vmware.vim25.mo.Folder;
 import com.vmware.vim25.mo.HostSystem;
 import com.vmware.vim25.mo.InventoryNavigator;
 import com.vmware.vim25.mo.ManagedEntity;
+import com.vmware.vim25.mo.PerformanceManager;
 import com.vmware.vim25.mo.ServiceInstance;
 import com.vmware.vim25.mo.Task;
 import com.vmware.vim25.mo.VirtualMachine;
@@ -65,6 +69,10 @@ public class VcenterManager {
 			throw new Exception("vm is null");
 
 		return vm;
+	}
+	
+	public PerformanceManager getPerformanceManager() {
+		return ServiceInstance.getPerformanceManager();
 	}
 
 	/*
@@ -277,9 +285,9 @@ public class VcenterManager {
 
 		try {
 			for (VirtualMachine vm : getVMs()) {
-				
+
 				AlarmSpec spec = buildAlarmSpec("VmPowerOffAlarm." + vm.getName());
-				
+
 				Alarm[] alarms = alarmMgr.getAlarm(vm);
 
 				for (Alarm alarm : alarms) {
@@ -289,7 +297,7 @@ public class VcenterManager {
 				}
 
 				alarmMgr.createAlarm(vm, spec);
-				
+
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -343,5 +351,87 @@ public class VcenterManager {
 		argument.setValue(null);
 		action.setArgument(new MethodActionArgument[] { argument });
 		return action;
+	}
+
+	public boolean addHost(String dcName, String hostName) {
+
+		HostConnectSpec newHost = new HostConnectSpec();
+		newHost.setHostName(hostName);
+		newHost.setUserName(VhostCredential.USER_NAME);
+		newHost.setPassword(VhostCredential.PASSWORD);
+		newHost.setSslThumbprint(VhostCredential.SSL_THUMB_PRINT);
+
+		try {
+			Datacenter dc = getDatacenterByName(dcName);
+			Task addHostTask =
+					dc.getHostFolder().addStandaloneHost_Task(newHost, new ComputeResourceConfigSpec(), true);
+
+			if (addHostTask.waitForTask() == Task.SUCCESS) {
+				System.out.println(String.format("Host %s is added to Datacenter %s successfully", hostName, dcName));
+				return true;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+
+		return false;
+	}
+
+	public boolean removeHost(String hostName) {
+
+		try {
+			HostSystem host = getVhostByName(hostName);
+			Task disconTask = host.disconnectHost();
+			System.out.println(String.format("disconnecting vHost %s ........", hostName));
+			
+			if (disconTask.waitForTask() == Task.SUCCESS) {
+				
+				System.out.println("vHost disconnedted.");
+				
+				ComputeResource cr = (ComputeResource) host.getParent();
+				Task removehost = cr.destroy_Task();
+				
+				System.out.println(String.format("removing vHost %s ........", hostName));
+				if (removehost.waitForTask() == Task.SUCCESS) {
+					System.out.println("vHost removed.");
+					return true;
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+
+		return false;
+	}
+
+	private Datacenter getDatacenterByName(String dcName) throws Exception {
+		Folder rootFolder = ServiceInstance.getRootFolder();
+		Datacenter dc =
+				(Datacenter) new InventoryNavigator(rootFolder).searchManagedEntity("Datacenter", dcName);
+
+		if (dc == null)
+			throw new Exception("datacenter is null");
+
+		return dc;
+	}
+
+	private List<Datacenter> getDatacenters() throws InvalidProperty, RuntimeFault, RemoteException {
+		List<Datacenter> dcs = new ArrayList<Datacenter>();
+
+		Folder rootFolder = ServiceInstance.getRootFolder();
+		ManagedEntity[] entities =
+				new InventoryNavigator(rootFolder).searchManagedEntities("Datacenter");
+
+		if (entities != null) {
+			for (ManagedEntity entity : entities) {
+				dcs.add((Datacenter) entity);
+			}
+		} else {
+			logger.warning("Found No Datacenters!");
+		}
+
+		return dcs;
 	}
 }

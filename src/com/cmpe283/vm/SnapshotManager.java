@@ -25,7 +25,7 @@ public class SnapshotManager {
 			SnapshotMap = new HashMap<String, String>();
 			VcenterManager = new VcenterManager();
 			if (VcenterManager == null)
-				throw new Exception("VM Manager cannot be initialized");
+				throw new Exception("Vcenter Manager cannot be initialized");
 		} catch (Exception e) {
 			e.printStackTrace();
 			logger.warning(e.getMessage());
