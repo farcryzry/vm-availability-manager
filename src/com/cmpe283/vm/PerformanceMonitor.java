@@ -1,10 +1,8 @@
 package com.cmpe283.vm;
 
-import java.rmi.RemoteException;
 import java.util.HashMap;
 import java.util.logging.Logger;
 
-import com.vmware.vim25.InvalidProperty;
 import com.vmware.vim25.PerfCounterInfo;
 import com.vmware.vim25.PerfEntityMetricBase;
 import com.vmware.vim25.PerfEntityMetricCSV;
@@ -12,7 +10,6 @@ import com.vmware.vim25.PerfMetricId;
 import com.vmware.vim25.PerfMetricSeriesCSV;
 import com.vmware.vim25.PerfProviderSummary;
 import com.vmware.vim25.PerfQuerySpec;
-import com.vmware.vim25.RuntimeFault;
 import com.vmware.vim25.mo.ManagedEntity;
 import com.vmware.vim25.mo.PerformanceManager;
 import com.vmware.vim25.mo.VirtualMachine;
@@ -21,20 +18,17 @@ public class PerformanceMonitor {
 
 	private static final Logger logger = Logger.getLogger(SnapshotManager.class.getName());
 
-	private static VcenterManager VcenterManager;
-
 	private PerformanceManager perfMgr;
 	private HashMap<Integer, PerfCounterInfo> countersInfoMap;
 	private HashMap<String, Integer> countersMap;
 	private PerfMetricId[] pmis;
 	private String[] counters;
 
-	public PerformanceMonitor() {
+	public PerformanceMonitor(PerformanceManager perfMgr) {
 		try {
-			VcenterManager = new VcenterManager();
-			if (VcenterManager == null)
-				throw new Exception("Vcenter Manager cannot be initialized");
-
+			if (perfMgr == null)
+				throw new Exception("Performance Monitor cannot be initialized");
+			this.perfMgr = perfMgr;
 			setUp();
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -43,7 +37,6 @@ public class PerformanceMonitor {
 	}
 
 	private void setUp() throws Exception {
-		perfMgr = VcenterManager.getPerformanceManager();
 		PerfCounterInfo[] pcis = perfMgr.getPerfCounter();
 
 		// create map between counter ID and PerfCounterInfo, counter name and
@@ -75,14 +68,24 @@ public class PerformanceMonitor {
 		PerfQuerySpec qSpec = createPerfQuerySpec(me, 1, refreshRate);
 
 		PerfEntityMetricBase[] pValues = perfMgr.queryPerf(new PerfQuerySpec[] { qSpec });
+
+		System.out.println("---------------------------------------------------------------------");
+		System.out.println(String.format("Statistics for VM: %s", me.getName()));
+
+		try {
+			VirtualMachineDescription wmDesc = new VirtualMachineDescription((VirtualMachine) me);
+			System.out.println(wmDesc);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
 		if (pValues != null) {
 			displayValues(pValues);
 		}
 	}
-	
-	public void printStatisticsForVm(String vmName) {
+
+	public void printStatisticsForVm(VirtualMachine vm) {
 		try {
-			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 			printPerf(vm);
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -121,7 +124,7 @@ public class PerformanceMonitor {
 	}
 
 	private void printPerfMetricCSV(PerfEntityMetricCSV pem) {
-		System.out.println("Performance: " + pem.getSampleInfoCSV());
+
 		PerfMetricSeriesCSV[] csvs = pem.getValue();
 
 		HashMap<Integer, PerfMetricSeriesCSV> stats = new HashMap<Integer, PerfMetricSeriesCSV>();
@@ -130,7 +133,7 @@ public class PerformanceMonitor {
 			stats.put(csvs[i].getId().getCounterId(), csvs[i]);
 		}
 
-		System.out.println("ID    Performance Counter                   Unit                Value");
+		System.out.println("Counter                                 Value(Unit)");
 		System.out.println("---------------------------------------------------------------------");
 		for (String counter : counters) {
 			Integer counterId = countersMap.get(counter);
@@ -138,8 +141,13 @@ public class PerformanceMonitor {
 			String value = null;
 			if (stats.containsKey(counterId))
 				value = stats.get(counterId).getValue();
-			System.out.println(String.format("%-6s%-38s%-20s%s", pci.getKey(), pci.getGroupInfo().getKey()
-					+ "." + pci.getNameInfo().getKey() + "." + pci.getRollupType(), pci.getUnitInfo().getKey(), value));
+
+			String counterName =
+					String.format("%s.%s.%s", pci.getGroupInfo().getKey(), pci.getNameInfo().getKey(), pci.getRollupType());
+			String unit = pci.getUnitInfo().getKey();
+			value = String.format("%s(%s)", value, unit);
+
+			System.out.println(String.format("%-40s%s", counterName, value));
 		}
 		System.out.println("---------------------------------------------------------------------");
 	}

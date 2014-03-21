@@ -15,7 +15,7 @@ public class VirtualMachineDescription {
 	public String toString() {
 		String separator = System.getProperty("line.separator");
 		StringBuilder sb = new StringBuilder();
-		sb.append("----------------------------");
+		sb.append("---------------------------------------------------------------------");
 		sb.append(separator);
 		sb.append(String.format("VM Name: %s", vm.getName()));
 		sb.append(separator);
@@ -35,8 +35,7 @@ public class VirtualMachineDescription {
 		sb.append(separator);
 		sb.append(String.format("State: %s", vm.getGuest().guestState));
 		sb.append(separator);
-		sb.append("----------------------------");
-		sb.append(separator);
+		sb.append("---------------------------------------------------------------------");
 
 		return sb.toString();
 	}

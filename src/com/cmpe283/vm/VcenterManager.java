@@ -70,21 +70,17 @@ public class VcenterManager {
 
 		return vm;
 	}
-	
-	public PerformanceManager getPerformanceManager() {
-		return ServiceInstance.getPerformanceManager();
-	}
 
 	/*
 	 * 1. Gather statistics (such as CPU, I/O, network etc) for a VM and display
 	 * in a text format
 	 */
 	public void showStatistics() {
+		PerformanceMonitor performanceMonitor = new PerformanceMonitor(ServiceInstance.getPerformanceManager());
 		try {
 			List<VirtualMachine> vms = getVMs();
 			for (VirtualMachine vm : vms) {
-				VirtualMachineDescription vmDesc = new VirtualMachineDescription(vm);
-				System.out.println(vmDesc);
+				performanceMonitor.printStatisticsForVm(vm);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();

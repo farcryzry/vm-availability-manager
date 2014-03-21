@@ -26,7 +26,6 @@ public class AvailabilityManager {
 		AvailabilityManager availabilityManager = new AvailabilityManager();
 		VcenterManager vcenterManager = availabilityManager.getVcenterManager();
 		SnapshotManager snapshotManager = new SnapshotManager();
-		PerformanceMonitor performanceMonitor = new PerformanceMonitor();
 		
 		
 		vcenterManager.showStatistics();
@@ -35,10 +34,8 @@ public class AvailabilityManager {
 		
 		//vcenterManager.setPowerOffAlarm();
 		
-		vcenterManager.addHost("", "");
-		vcenterManager.removeHost("");
-		
-		performanceMonitor.printStatisticsForVm("");
+		//vcenterManager.addHost("", "");
+		//vcenterManager.removeHost("");
 		
 	}
 }
