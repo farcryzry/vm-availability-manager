@@ -45,7 +45,7 @@ public class VcenterManager {
 	public VcenterManager() {
 		try {
 			ServiceInstance =
-					new ServiceInstance(new URL(VcenterSettings.URL), VcenterSettings.USER_NAME, VcenterSettings.PASSWORD, true);
+					new ServiceInstance(new URL(Credentials.VCENTER_URL), Credentials.VCENTER_USER_NAME, Credentials.PASSWORD, true);
 			if (ServiceInstance == null)
 				throw new Exception("ServiceInstance cannot be initialized");
 		} catch (Exception e) {
@@ -355,9 +355,9 @@ public class VcenterManager {
 
 		HostConnectSpec newHost = new HostConnectSpec();
 		newHost.setHostName(hostName);
-		newHost.setUserName(VhostCredential.USER_NAME);
-		newHost.setPassword(VhostCredential.PASSWORD);
-		String sslThumbprint = VhostCredential.SSL_MAP.get(hostName);
+		newHost.setUserName(Credentials.VHOST_USER_NAME);
+		newHost.setPassword(Credentials.PASSWORD);
+		String sslThumbprint = Credentials.VHOST_SSL_MAP.get(hostName);
 		if (sslThumbprint != null) {
 			newHost.setSslThumbprint(sslThumbprint);
 		} else {
