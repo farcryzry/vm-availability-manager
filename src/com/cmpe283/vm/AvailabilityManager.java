@@ -17,25 +17,26 @@ public class AvailabilityManager {
 			logger.warning(e.getMessage());
 		}
 	}
-	
+
 	public VcenterManager getVcenterManager() {
 		return vcenterManager;
 	}
-	
-	public static void main(String [] args) {
+
+	public static void main(String[] args) {
 		AvailabilityManager availabilityManager = new AvailabilityManager();
 		VcenterManager vcenterManager = availabilityManager.getVcenterManager();
 		SnapshotManager snapshotManager = new SnapshotManager();
-		
-		
+
 		vcenterManager.showStatistics();
-		
-		//snapshotManager.backupCache(0);
-		
-		//vcenterManager.setPowerOffAlarm();
-		
-		//vcenterManager.addHost("", "");
-		//vcenterManager.removeHost("");
-		
+
+		// snapshotManager.backupCache(0);
+
+		// vcenterManager.setPowerOffAlarm();
+
+		// vcenterManager.removeHost("130.65.132.155");
+		vcenterManager.addHost("New Datacenter", "130.65.132.159");
+
+		// vcenterManager.failover(0);
+
 	}
 }

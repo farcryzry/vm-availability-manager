@@ -21,7 +21,6 @@ import com.vmware.vim25.MethodActionArgument;
 import com.vmware.vim25.RuntimeFault;
 import com.vmware.vim25.StateAlarmExpression;
 import com.vmware.vim25.StateAlarmOperator;
-import com.vmware.vim25.TaskInfo;
 import com.vmware.vim25.VirtualMachineMovePriority;
 import com.vmware.vim25.VirtualMachinePowerState;
 import com.vmware.vim25.mo.Alarm;
@@ -32,7 +31,6 @@ import com.vmware.vim25.mo.Folder;
 import com.vmware.vim25.mo.HostSystem;
 import com.vmware.vim25.mo.InventoryNavigator;
 import com.vmware.vim25.mo.ManagedEntity;
-import com.vmware.vim25.mo.PerformanceManager;
 import com.vmware.vim25.mo.ServiceInstance;
 import com.vmware.vim25.mo.Task;
 import com.vmware.vim25.mo.VirtualMachine;
@@ -76,7 +74,8 @@ public class VcenterManager {
 	 * in a text format
 	 */
 	public void showStatistics() {
-		PerformanceMonitor performanceMonitor = new PerformanceMonitor(ServiceInstance.getPerformanceManager());
+		PerformanceMonitor performanceMonitor =
+				new PerformanceMonitor(ServiceInstance.getPerformanceManager());
 		try {
 			List<VirtualMachine> vms = getVMs();
 			for (VirtualMachine vm : vms) {
@@ -129,6 +128,8 @@ public class VcenterManager {
 			if (task.waitForTask() == Task.SUCCESS) {
 				System.out.println(String.format("VM %s  is powered on successfully!", vm.getName()));
 				return true;
+			} else {
+				System.out.println(String.format("VM %s failed to power on!!! %s", vm.getName(), showTaskErrorMessage(task)));
 			}
 
 			return false;
@@ -186,9 +187,8 @@ public class VcenterManager {
 				if (task.waitForTask() == Task.SUCCESS) {
 					System.out.println(isColdMigration ? "Cold Migrated" : "VMotioned!");
 				} else {
-					System.out.println(isColdMigration ? "Cold Migrated" : "VMotioned!");
-					TaskInfo info = task.getTaskInfo();
-					System.out.println(info.getError().getFault());
+					System.out.println(String.format("VM %s failed to do %s!!! %s", vm.getName(), isColdMigration
+							? "Cold Migration" : "VMotion", showTaskErrorMessage(task)));
 				}
 			}
 
@@ -243,7 +243,9 @@ public class VcenterManager {
 					ManagedEntityStatus heartbeatStatus = vm.getGuestHeartbeatStatus();
 					switch (heartbeatStatus) {
 					case red:
-						migrate(vm, "1.1.1.1", true);
+						System.out.println(String.format("VM %s: down!!!", vm.getName()));
+						// migrate(vm, "1.1.1.1", true);
+
 						break;
 					case gray:
 						System.out.println(String.format("VM %s: VMWare Tools is not installed or not running", vm.getName()));
@@ -355,7 +357,12 @@ public class VcenterManager {
 		newHost.setHostName(hostName);
 		newHost.setUserName(VhostCredential.USER_NAME);
 		newHost.setPassword(VhostCredential.PASSWORD);
-		newHost.setSslThumbprint(VhostCredential.SSL_THUMB_PRINT);
+		String sslThumbprint = VhostCredential.SSL_MAP.get(hostName);
+		if (sslThumbprint != null) {
+			newHost.setSslThumbprint(sslThumbprint);
+		} else {
+			return false;
+		}
 
 		try {
 			Datacenter dc = getDatacenterByName(dcName);
@@ -363,9 +370,13 @@ public class VcenterManager {
 					dc.getHostFolder().addStandaloneHost_Task(newHost, new ComputeResourceConfigSpec(), true);
 
 			if (addHostTask.waitForTask() == Task.SUCCESS) {
+
 				System.out.println(String.format("Host %s is added to Datacenter %s successfully", hostName, dcName));
 				return true;
+			} else {
+				System.out.println(String.format("vHost %s failed to add!!! %s", hostName, showTaskErrorMessage(addHostTask)));
 			}
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			logger.warning(e.getMessage());
@@ -374,24 +385,31 @@ public class VcenterManager {
 		return false;
 	}
 
+	private String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
+		return task.getTaskInfo().getError().getLocalizedMessage();
+	}
+
 	public boolean removeHost(String hostName) {
 
 		try {
 			HostSystem host = getVhostByName(hostName);
+
 			Task disconTask = host.disconnectHost();
 			System.out.println(String.format("disconnecting vHost %s ........", hostName));
-			
+
 			if (disconTask.waitForTask() == Task.SUCCESS) {
-				
+
 				System.out.println("vHost disconnedted.");
-				
+
 				ComputeResource cr = (ComputeResource) host.getParent();
-				Task removehost = cr.destroy_Task();
-				
+				Task removeTask = cr.destroy_Task();
+
 				System.out.println(String.format("removing vHost %s ........", hostName));
-				if (removehost.waitForTask() == Task.SUCCESS) {
+				if (removeTask.waitForTask() == Task.SUCCESS) {
 					System.out.println("vHost removed.");
 					return true;
+				} else {
+					System.out.println(String.format("vHost %s failed to remove!!! %s", hostName, showTaskErrorMessage(removeTask)));
 				}
 			}
 		} catch (Exception e) {

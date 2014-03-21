@@ -1,10 +1,13 @@
 package com.cmpe283.vm;
 
+import java.rmi.RemoteException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Logger;
 
+import com.vmware.vim25.InvalidProperty;
 import com.vmware.vim25.ManagedObjectReference;
+import com.vmware.vim25.RuntimeFault;
 import com.vmware.vim25.VirtualMachineSnapshotInfo;
 import com.vmware.vim25.VirtualMachineSnapshotTree;
 import com.vmware.vim25.mo.Task;
@@ -30,6 +33,10 @@ public class SnapshotManager {
 			e.printStackTrace();
 			logger.warning(e.getMessage());
 		}
+	}
+
+	private String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
+		return task.getTaskInfo().getError().getLocalizedMessage();
 	}
 
 	/*
@@ -75,6 +82,8 @@ public class SnapshotManager {
 				System.out.println(String.format("Snapshot was created. vmName: %s, snapshotName: %s, description: %s", vmName, snapshotName, snapshotDescription));
 				SnapshotMap.put(vmName, snapshotName);
 				return true;
+			} else {
+				System.out.println(String.format("Snapshot for VM %s failed to create!!! %s", vmName, showTaskErrorMessage(task)));
 			}
 
 			return false;
@@ -125,6 +134,8 @@ public class SnapshotManager {
 				if (task.waitForTask() == Task.SUCCESS) {
 					System.out.println(String.format("VM %s is reverted to snapshot: %s", vmName, snapshotName));
 					return true;
+				} else {
+					System.out.println(String.format("Snapshot for VM %s failed to revert!!! %s", vmName, showTaskErrorMessage(task)));
 				}
 			}
 
@@ -179,6 +190,8 @@ public class SnapshotManager {
 				if (task.waitForTask() == Task.SUCCESS) {
 					System.out.println(String.format("Removed snapshot: %s", snapshotName));
 					return true;
+				} else {
+					System.out.println(String.format("Snapshot for VM %s failed to remove!!! %s", vmName, showTaskErrorMessage(task)));
 				}
 			}
 
@@ -198,6 +211,8 @@ public class SnapshotManager {
 			if (task.waitForTask() == Task.SUCCESS) {
 				System.out.println("Removed all snapshots");
 				return true;
+			} else {
+				System.out.println(String.format("Snapshots for VM %s failed to remove!!! %s", vmName, showTaskErrorMessage(task)));
 			}
 
 			return false;
