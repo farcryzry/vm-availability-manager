@@ -1,42 +1,32 @@
 package com.cmpe283.vm;
 
+import java.rmi.RemoteException;
 import java.util.logging.Logger;
+
+import com.vmware.vim25.InvalidProperty;
+import com.vmware.vim25.RuntimeFault;
+import com.vmware.vim25.mo.VirtualMachine;
 
 public class AvailabilityManager {
 	private static final Logger logger = Logger.getLogger(AvailabilityManager.class.getName());
 
-	private VcenterManager vcenterManager;
+	public static void main(String[] args) throws InvalidProperty, RuntimeFault, RemoteException, Exception {
 
-	public AvailabilityManager() {
-		try {
-			vcenterManager = new VcenterManager();
-			if (vcenterManager == null)
-				throw new Exception("VM Manager cannot be initialized");
-		} catch (Exception e) {
-			e.printStackTrace();
-			logger.warning(e.getMessage());
-		}
-	}
+		//VcenterManager.showStatistics();
+		
+		
+		//Thread t = new Thread(new SnapshotTask(0));
+		//t.start();
 
-	public VcenterManager getVcenterManager() {
-		return vcenterManager;
-	}
+		//VcenterManager.setPowerOffAlarm();
 
-	public static void main(String[] args) {
-		AvailabilityManager availabilityManager = new AvailabilityManager();
-		VcenterManager vcenterManager = availabilityManager.getVcenterManager();
-		SnapshotManager snapshotManager = new SnapshotManager();
-
-		vcenterManager.showStatistics();
-
-		// snapshotManager.backupCache(0);
-
-		// vcenterManager.setPowerOffAlarm();
-
-		// vcenterManager.removeHost("130.65.132.155");
-		vcenterManager.addHost("New Datacenter", "130.65.132.159");
-
-		// vcenterManager.failover(0);
+		
+		VcenterManager.failover(0, "130.65.132.151");
+		
+		//VirtualMachine vm = VcenterManager.getVmByName("T03-VM03-Lin-Ruiyun");
+		
+		//VcenterManager.powerOff(vm);
+		
 
 	}
 }

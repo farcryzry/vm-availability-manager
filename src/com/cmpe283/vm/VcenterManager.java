@@ -42,7 +42,7 @@ public class VcenterManager {
 
 	private static boolean isFailoverOn = true;
 
-	public VcenterManager() {
+	static {
 		try {
 			ServiceInstance =
 					new ServiceInstance(new URL(Credentials.VCENTER_URL), Credentials.VCENTER_USER_NAME, Credentials.PASSWORD, true);
@@ -54,11 +54,11 @@ public class VcenterManager {
 		}
 	}
 
-	public void logout() {
+	public static void logout() {
 		ServiceInstance.getServerConnection().logout();
 	}
 
-	public VirtualMachine getVmByName(String vmName) throws InvalidProperty, RuntimeFault, RemoteException, Exception {
+	public static VirtualMachine getVmByName(String vmName) throws InvalidProperty, RuntimeFault, RemoteException, Exception {
 		Folder vmFolder = ServiceInstance.getRootFolder();
 		VirtualMachine vm =
 				(VirtualMachine) new InventoryNavigator(vmFolder).searchManagedEntity("VirtualMachine", vmName);
@@ -73,7 +73,7 @@ public class VcenterManager {
 	 * 1. Gather statistics (such as CPU, I/O, network etc) for a VM and display
 	 * in a text format
 	 */
-	public void showStatistics() {
+	public static void showStatistics() {
 		PerformanceMonitor performanceMonitor =
 				new PerformanceMonitor(ServiceInstance.getPerformanceManager());
 		try {
@@ -87,17 +87,51 @@ public class VcenterManager {
 		}
 	}
 
-	public HostSystem getVhostByName(String hostName) throws Exception {
+	public static HostSystem getVhostByName(String hostName) throws Exception {
 		Folder vmFolder = ServiceInstance.getRootFolder();
 		HostSystem host =
 				(HostSystem) new InventoryNavigator(vmFolder).searchManagedEntity("HostSystem", hostName);
-		if (host == null)
-			throw new Exception("host is null");
 
 		return host;
 	}
 
-	public List<VirtualMachine> getVMs() throws InvalidProperty, RuntimeFault, RemoteException {
+	public static List<HostSystem> getVhosts() throws InvalidProperty, RuntimeFault, RemoteException {
+		List<HostSystem> hosts = new ArrayList<HostSystem>();
+
+		Folder vmFolder = ServiceInstance.getRootFolder();
+		ManagedEntity[] entities =
+				new InventoryNavigator(vmFolder).searchManagedEntities("HostSystem");
+		if (entities != null) {
+			for (ManagedEntity entity : entities) {
+				hosts.add((HostSystem) entity);
+			}
+		} else {
+			logger.warning("Found No Vhost!");
+		}
+
+		return hosts;
+	}
+
+	public static HostSystem getVhostByVM(VirtualMachine vm) {
+
+		try {
+			List<HostSystem> hosts = getVhosts();
+
+			for (HostSystem host : hosts) {
+				if (host.getMOR().val.equals(vm.getSummary().runtime.host.val)) {
+					return host;
+				}
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+
+		return null;
+	}
+
+	public static List<VirtualMachine> getVMs() throws InvalidProperty, RuntimeFault, RemoteException {
 		List<VirtualMachine> virtualMachines = new ArrayList<VirtualMachine>();
 
 		Folder vmFolder = ServiceInstance.getRootFolder();
@@ -114,18 +148,36 @@ public class VcenterManager {
 		return virtualMachines;
 	}
 
-	public boolean powerOn(String vmName) {
+	public static boolean powerOn(String vmName) {
+		try {
+			Folder vmFolder = ServiceInstance.getRootFolder();
+			VirtualMachine vm =
+					(VirtualMachine) new InventoryNavigator(vmFolder).searchManagedEntity("VirtualMachine", vmName);
+			return powerOn(vm, false);
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+		return false;
+	}
+
+	public static boolean powerOn(VirtualMachine vm, boolean waitToFinish) {
 
 		try {
-			VirtualMachine vm = getVmByName(vmName);
 
-			if (isPoweredOn(vm))
+			if (isPoweredOn(vm)) {
 				return true;
+			}
 
 			Task task = vm.powerOnVM_Task(null);
 			System.out.println(String.format("VM %s now is powerring on! Please wait...", vm.getName()));
 
 			if (task.waitForTask() == Task.SUCCESS) {
+				while (waitToFinish) {
+					if (VcenterManager.checkVMHeartbeat(vm))
+						break;
+					Thread.sleep(3000);
+				}
 				System.out.println(String.format("VM %s  is powered on successfully!", vm.getName()));
 				return true;
 			} else {
@@ -141,7 +193,33 @@ public class VcenterManager {
 		return false;
 	}
 
-	private boolean isPoweredOn(VirtualMachine vm) {
+	public static boolean powerOff(VirtualMachine vm) {
+
+		try {
+
+			if (!isPoweredOn(vm))
+				return true;
+
+			Task task = vm.powerOffVM_Task();
+			System.out.println(String.format("VM %s now is powerring off! Please wait...", vm.getName()));
+
+			if (task.waitForTask() == Task.SUCCESS) {
+				System.out.println(String.format("VM %s  is powered off successfully!", vm.getName()));
+				return true;
+			} else {
+				System.out.println(String.format("VM %s failed to power off!!! %s", vm.getName(), showTaskErrorMessage(task)));
+			}
+
+			return false;
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+		return false;
+	}
+
+	public static boolean isPoweredOn(VirtualMachine vm) {
 		if (vm == null)
 			return false;
 
@@ -149,15 +227,38 @@ public class VcenterManager {
 		return vmps == VirtualMachinePowerState.poweredOn;
 	}
 
+	public static boolean isVhostPoweredOn(HostSystem host) {
+
+		try {
+			ServiceInstance superVCenter =
+					new ServiceInstance(new URL(Credentials.ROOT_VCENTER_URL), Credentials.VCENTER_USER_NAME, Credentials.PASSWORD, true);
+			VirtualMachine vm =
+					(VirtualMachine) new InventoryNavigator(superVCenter.getRootFolder()).searchManagedEntity("VirtualMachine", Credentials.VHOST_NAME_MAP.get(host.getName()));
+
+			return isPoweredOn(vm);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+
+		return false;
+	}
+
 	/*
 	 * 4. If the vHost is not alive, try to make it alive. If even after a fixed
 	 * number of attempts, the vHost does not come up, remove the vHost from the
 	 * list.
 	 */
-	public boolean migrate(VirtualMachine vm, String newHostName, boolean isColdMigration) {
+	public static boolean migrate(VirtualMachine vm, String newHostName, boolean isColdMigration) {
 		try {
 
 			HostSystem newHost = getVhostByName(newHostName);
+
+			if (newHost == null) {
+				addHost("Team03_DC", newHostName);
+				newHost = getVhostByName(newHostName);
+			}
 
 			boolean isVhostAvailable = false;
 
@@ -171,7 +272,6 @@ public class VcenterManager {
 			}
 
 			if (!isVhostAvailable) {
-				// todo: remove vhost
 				return false;
 			}
 
@@ -186,13 +286,13 @@ public class VcenterManager {
 
 				if (task.waitForTask() == Task.SUCCESS) {
 					System.out.println(isColdMigration ? "Cold Migrated" : "VMotioned!");
+					return true;
 				} else {
 					System.out.println(String.format("VM %s failed to do %s!!! %s", vm.getName(), isColdMigration
 							? "Cold Migration" : "VMotion", showTaskErrorMessage(task)));
+					return false;
 				}
 			}
-
-			return false;
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -201,7 +301,7 @@ public class VcenterManager {
 		return false;
 	}
 
-	private boolean checkVhostStatus(HostSystem host) {
+	public static boolean checkVhostStatus(HostSystem host) {
 		if (host == null)
 			return false;
 
@@ -209,10 +309,10 @@ public class VcenterManager {
 
 		System.out.println(String.format("VHost %s: Overall Status: %s", host.getName(), hostStatus));
 
-		return hostStatus == ManagedEntityStatus.green;
+		return hostStatus != ManagedEntityStatus.red;
 	}
 
-	private boolean checkVmotionCompatibility(VirtualMachine vm, HostSystem host) throws RuntimeFault, RemoteException {
+	private static boolean checkVmotionCompatibility(VirtualMachine vm, HostSystem host) throws RuntimeFault, RemoteException {
 		String[] checks = new String[] { "cpu", "software" };
 		HostVMotionCompatibility[] vmcs =
 				ServiceInstance.queryVMotionCompatibility(vm, new HostSystem[] { host }, checks);
@@ -231,45 +331,20 @@ public class VcenterManager {
 	 * host/resource pool using VMDK image format (Cold migration). default 5
 	 * seconds. vm.getGuestHeartbeatStatus();
 	 */
-	public void failover(int interval) {
-		if (interval <= 0)
-			interval = 5000;
+	public static void failover(int interval, String backupVhostName) {
 
 		try {
 			List<VirtualMachine> vms = getVMs();
 
-			while (isFailoverOn) {
-				for (VirtualMachine vm : vms) {
-					ManagedEntityStatus heartbeatStatus = vm.getGuestHeartbeatStatus();
-					switch (heartbeatStatus) {
-					case red:
-						System.out.println(String.format("VM %s: down!!!", vm.getName()));
-						// migrate(vm, "1.1.1.1", true);
-
-						break;
-					case gray:
-						System.out.println(String.format("VM %s: VMWare Tools is not installed or not running", vm.getName()));
-						break;
-					case yellow:
-						System.out.println(String.format("VM %s: Intermittent heartbeat, possible due to heavy load at the gust OS", vm.getName()));
-						break;
-					default:
-						break;
-					}
-				}
-
-				Thread.sleep(interval);
+			for (VirtualMachine vm : vms) {
+				Thread t = new Thread(new HeartbeatTask(vm, backupVhostName, interval));
+				t.start();
 			}
 
 		} catch (Exception e) {
 			e.printStackTrace();
 			logger.warning(e.getMessage());
 		}
-
-	}
-
-	public void turnOffFailOver() {
-		isFailoverOn = false;
 	}
 
 	/*
@@ -278,7 +353,7 @@ public class VcenterManager {
 	 * in this case by powered off by a user)
 	 */
 
-	public void setPowerOffAlarm() {
+	public static void setPowerOffAlarm() {
 		AlarmManager alarmMgr = ServiceInstance.getAlarmManager();
 
 		try {
@@ -301,10 +376,9 @@ public class VcenterManager {
 			e.printStackTrace();
 			logger.warning(e.getMessage());
 		}
-
 	}
 
-	private AlarmSpec buildAlarmSpec(String alarmName) {
+	private static AlarmSpec buildAlarmSpec(String alarmName) {
 		AlarmSpec spec = new AlarmSpec();
 
 		StateAlarmExpression expression = createStateAlarmExpression();
@@ -326,14 +400,14 @@ public class VcenterManager {
 		return spec;
 	}
 
-	private AlarmTriggeringAction createAlarmTriggerAction(Action action) {
+	private static AlarmTriggeringAction createAlarmTriggerAction(Action action) {
 		AlarmTriggeringAction alarmAction = new AlarmTriggeringAction();
 		alarmAction.setYellow2red(true);
 		alarmAction.setAction(action);
 		return alarmAction;
 	}
 
-	private StateAlarmExpression createStateAlarmExpression() {
+	private static StateAlarmExpression createStateAlarmExpression() {
 		StateAlarmExpression expression = new StateAlarmExpression();
 		expression.setType("VirtualMachine");
 		expression.setStatePath("runtime.powerState");
@@ -342,16 +416,17 @@ public class VcenterManager {
 		return expression;
 	}
 
-	private MethodAction createPowerOffAction() {
+	private static MethodAction createPowerOffAction() {
 		MethodAction action = new MethodAction();
 		action.setName("PowerOffVM_Task");
 		MethodActionArgument argument = new MethodActionArgument();
 		argument.setValue(null);
 		action.setArgument(new MethodActionArgument[] { argument });
+
 		return action;
 	}
 
-	public boolean addHost(String dcName, String hostName) {
+	public static boolean addHost(String dcName, String hostName) {
 
 		HostConnectSpec newHost = new HostConnectSpec();
 		newHost.setHostName(hostName);
@@ -385,11 +460,11 @@ public class VcenterManager {
 		return false;
 	}
 
-	private String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
+	private static String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
 		return task.getTaskInfo().getError().getLocalizedMessage();
 	}
 
-	public boolean removeHost(String hostName) {
+	public static boolean removeHost(String hostName) {
 
 		try {
 			HostSystem host = getVhostByName(hostName);
@@ -420,7 +495,7 @@ public class VcenterManager {
 		return false;
 	}
 
-	private Datacenter getDatacenterByName(String dcName) throws Exception {
+	private static Datacenter getDatacenterByName(String dcName) throws Exception {
 		Folder rootFolder = ServiceInstance.getRootFolder();
 		Datacenter dc =
 				(Datacenter) new InventoryNavigator(rootFolder).searchManagedEntity("Datacenter", dcName);
@@ -431,7 +506,7 @@ public class VcenterManager {
 		return dc;
 	}
 
-	private List<Datacenter> getDatacenters() throws InvalidProperty, RuntimeFault, RemoteException {
+	private static List<Datacenter> getDatacenters() throws InvalidProperty, RuntimeFault, RemoteException {
 		List<Datacenter> dcs = new ArrayList<Datacenter>();
 
 		Folder rootFolder = ServiceInstance.getRootFolder();
@@ -447,5 +522,86 @@ public class VcenterManager {
 		}
 
 		return dcs;
+	}
+
+	public static boolean checkVMHeartbeat(VirtualMachine vm) throws Exception {
+		boolean result = true;
+
+		/*
+		 * ManagedEntityStatus heartbeatStatus = vm.getGuestHeartbeatStatus();
+		 * switch (heartbeatStatus) { case red:
+		 * System.out.println(String.format("VM %s: down!!!", vm.getName()));
+		 * result = false; break; case gray: System.out.println(String.format(
+		 * "VM %s: VMWare Tools is not installed or not running.",
+		 * vm.getName())); break; case yellow: System.out.println(String.format(
+		 * "VM %s: Intermittent heartbeat, possible due to heavy load at the gust OS."
+		 * , vm.getName())); break; default:
+		 * System.out.println(String.format("VM %s: heartbeat status OK.",
+		 * vm.getName())); break; }
+		 */
+
+		String ip = vm.getGuest().getIpAddress();
+		int totalCount = 3;
+		int successCount = 0;
+		for (int i = 0; i < totalCount; i++) {
+			result = ping(ip);
+			if (result)
+				successCount++;
+			Thread.sleep(500);
+		}
+
+		System.out.println(String.format("Ping %s %s!", vm.getName(), result ? "ok"
+				: String.format("failed(%s/%s)", successCount, totalCount)));
+
+		return result;
+	}
+
+	public static boolean checkVHostHeartbeat(String hostName) throws Exception {
+
+		HostSystem host = getVhostByName(hostName);
+
+		return checkVHostHeartbeat(host);
+	}
+
+	public static boolean checkVHostHeartbeat(HostSystem host) throws Exception {
+		boolean result = true;
+
+		String ip = host.getConfig().getNetwork().getVnic()[0].getSpec().getIp().getIpAddress();
+		int totalCount = 3;
+		int successCount = 0;
+		for (int i = 0; i < totalCount; i++) {
+			result = ping(ip);
+			if (result)
+				successCount++;
+			Thread.sleep(500);
+		}
+
+		System.out.println(String.format("Ping %s %s!", host.getName(), result ? "ok"
+				: String.format("failed(%s/%s)", successCount, totalCount)));
+
+		return result;
+	}
+
+	public static boolean ping(String ip) {
+		try {
+			String cmd = "";
+			if (System.getProperty("os.name").startsWith("Windows")) {
+				cmd = "ping -n 1 " + ip;
+			} else {
+				cmd = "ping -c 1 " + ip;
+			}
+
+			Process process = Runtime.getRuntime().exec(cmd);
+			process.waitFor();
+
+			System.out.println(String.format("--Ping %s %s!", ip, process.exitValue() == 0 ? "ok"
+					: "failed"));
+
+			return process.exitValue() == 0;
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return false;
+		}
 	}
 }

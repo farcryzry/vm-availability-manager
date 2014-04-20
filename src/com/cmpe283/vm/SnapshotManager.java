@@ -1,15 +1,21 @@
 package com.cmpe283.vm;
 
+import java.net.URL;
 import java.rmi.RemoteException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Logger;
 
 import com.vmware.vim25.InvalidProperty;
+import com.vmware.vim25.ManagedEntityStatus;
 import com.vmware.vim25.ManagedObjectReference;
 import com.vmware.vim25.RuntimeFault;
+import com.vmware.vim25.VirtualMachinePowerState;
 import com.vmware.vim25.VirtualMachineSnapshotInfo;
 import com.vmware.vim25.VirtualMachineSnapshotTree;
+import com.vmware.vim25.mo.HostSystem;
+import com.vmware.vim25.mo.InventoryNavigator;
+import com.vmware.vim25.mo.ServiceInstance;
 import com.vmware.vim25.mo.Task;
 import com.vmware.vim25.mo.VirtualMachine;
 import com.vmware.vim25.mo.VirtualMachineSnapshot;
@@ -17,46 +23,32 @@ import com.vmware.vim25.mo.VirtualMachineSnapshot;
 public class SnapshotManager {
 	private static final Logger logger = Logger.getLogger(SnapshotManager.class.getName());
 
-	private static VcenterManager VcenterManager;
-
-	private static HashMap<String, String> SnapshotMap;
-
 	private static boolean stopBackup = false;
 
-	public SnapshotManager() {
-		try {
-			SnapshotMap = new HashMap<String, String>();
-			VcenterManager = new VcenterManager();
-			if (VcenterManager == null)
-				throw new Exception("Vcenter Manager cannot be initialized");
-		} catch (Exception e) {
-			e.printStackTrace();
-			logger.warning(e.getMessage());
-		}
-	}
-
-	private String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
+	private static String showTaskErrorMessage(Task task) throws InvalidProperty, RuntimeFault, RemoteException {
 		return task.getTaskInfo().getError().getLocalizedMessage();
 	}
 
 	/*
 	 * 2. Refresh the backup cache update every 10 minute. default 600000
 	 */
-	public void backupCache(int interval) {
+	public static void backupCache(int interval) {
 
 		if (interval <= 0)
 			interval = 600000;
 
-		SnapshotMap.clear();
 		try {
 			List<VirtualMachine> vms = VcenterManager.getVMs();
-			for (VirtualMachine vm : vms) {
-				SnapshotMap.put(vm.getName(), null);
-			}
+			List<HostSystem> hosts = VcenterManager.getVhosts();
 
 			while (!stopBackup) {
-				for (String vmName : SnapshotMap.keySet()) {
-					create(vmName, "latest_snapshot", "");
+
+				for (VirtualMachine vm : vms) {
+					create(vm.getName(), "latest_snapshot", "");
+				}
+
+				for (HostSystem host : hosts) {
+					createForVhost(host.getName());
 				}
 
 				Thread.sleep(interval);
@@ -67,23 +59,27 @@ public class SnapshotManager {
 		}
 	}
 
-	public void stopBackup() {
+	public static void stopBackup() {
 		stopBackup = true;
 	}
 
-	private boolean create(String vmName, String snapshotName, String snapshotDescription) {
+	private static boolean create(String vmName, String snapshotName, String snapshotDescription) {
 
 		try {
 			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
-			Task task = vm.createSnapshot_Task(snapshotName, snapshotDescription, false, false);
+			if (VcenterManager.checkVMHeartbeat(vm)) {
 
-			if (task.waitForTask() == Task.SUCCESS) {
-				System.out.println(String.format("Snapshot was created. vmName: %s, snapshotName: %s, description: %s", vmName, snapshotName, snapshotDescription));
-				SnapshotMap.put(vmName, snapshotName);
-				return true;
+				Task task = vm.createSnapshot_Task(snapshotName, snapshotDescription, false, false);
+
+				if (task.waitForTask() == Task.SUCCESS) {
+					System.out.println(String.format("Snapshot was created. vmName: %s, snapshotName: %s, description: %s", vmName, snapshotName, snapshotDescription));
+					return true;
+				} else {
+					System.out.println(String.format("Snapshot for VM %s failed to create!!! %s", vmName, showTaskErrorMessage(task)));
+				}
 			} else {
-				System.out.println(String.format("Snapshot for VM %s failed to create!!! %s", vmName, showTaskErrorMessage(task)));
+				System.out.println("Cannot ping " + vm.getName() + ". Snapshot skipped.");
 			}
 
 			return false;
@@ -92,6 +88,51 @@ public class SnapshotManager {
 			logger.warning(e.getMessage());
 		}
 		return false;
+	}
+
+	public static void createForVhost(String hostName) throws Exception {
+		ServiceInstance superVCenter =
+				new ServiceInstance(new URL(Credentials.ROOT_VCENTER_URL), Credentials.VCENTER_USER_NAME, Credentials.PASSWORD, true);
+		VirtualMachine vm =
+				(VirtualMachine) new InventoryNavigator(superVCenter.getRootFolder()).searchManagedEntity("VirtualMachine", Credentials.VHOST_NAME_MAP.get(hostName));
+
+		if (VcenterManager.checkVHostHeartbeat(hostName)) {
+			String snapshotname = "vHost-" + vm.getName() + "-SnapShot";
+
+			Task task = vm.createSnapshot_Task(snapshotname, "", false, false);
+			if (task.waitForTask() == Task.SUCCESS)
+				System.out.println(snapshotname + " was created.");
+			else
+				System.out.println(snapshotname + " create failure.");
+		} else {
+			System.out.println("Cannot ping " + vm.getName() + ". Snapshot skipped.");
+		}
+
+		superVCenter.getServerConnection().logout();
+	}
+
+	public synchronized static boolean revertForVhost(HostSystem host) throws Exception {
+
+		if (host == null)
+			return false;
+
+		boolean result = true;
+		ServiceInstance superVCenter =
+				new ServiceInstance(new URL(Credentials.ROOT_VCENTER_URL), Credentials.VCENTER_USER_NAME, Credentials.PASSWORD, true);
+		VirtualMachine vm =
+				(VirtualMachine) new InventoryNavigator(superVCenter.getRootFolder()).searchManagedEntity("VirtualMachine", Credentials.VHOST_NAME_MAP.get(host.getName()));
+
+		if (host.getOverallStatus() != ManagedEntityStatus.green) {
+			result = revert(vm);
+			while(host.getOverallStatus() != ManagedEntityStatus.green) {
+				VcenterManager.powerOn(vm, false);
+				Thread.sleep(3000);
+			}
+		}
+
+		superVCenter.getServerConnection().logout();
+
+		return result;
 	}
 
 	private void list(String vmName) {
@@ -123,20 +164,39 @@ public class SnapshotManager {
 		}
 	}
 
-	private boolean revert(String vmName, String snapshotName) {
+	public static boolean revert(VirtualMachine vm) {
+		try {
+			
+			//if (VcenterManager.isPoweredOn(vm)) {
+			//	return true;
+			//}
+			
+			Task task = vm.revertToCurrentSnapshot_Task(null);
+			if (task.waitForTask() == Task.SUCCESS) {
+				System.out.println(String.format("VM %s is reverted to current snapshot", vm.getName()));
+				return true;
+			} else {
+				System.out.println(String.format("Snapshot for VM %s failed to revert!!! %s", vm.getName(), showTaskErrorMessage(task)));
+			}
+
+			return false;
+		} catch (Exception e) {
+			e.printStackTrace();
+			logger.warning(e.getMessage());
+		}
+		return false;
+	}
+
+	public static boolean revert(String vmName) {
 		try {
 			VirtualMachine vm = VcenterManager.getVmByName(vmName);
 
-			VirtualMachineSnapshot vmsnap = getSnapshotInTree(vm, snapshotName);
-
-			if (vmsnap != null) {
-				Task task = vmsnap.revertToSnapshot_Task(null);
-				if (task.waitForTask() == Task.SUCCESS) {
-					System.out.println(String.format("VM %s is reverted to snapshot: %s", vmName, snapshotName));
-					return true;
-				} else {
-					System.out.println(String.format("Snapshot for VM %s failed to revert!!! %s", vmName, showTaskErrorMessage(task)));
-				}
+			Task task = vm.revertToCurrentSnapshot_Task(null);
+			if (task.waitForTask() == Task.SUCCESS) {
+				System.out.println(String.format("VM %s is reverted to current snapshot", vmName));
+				return true;
+			} else {
+				System.out.println(String.format("Snapshot for VM %s failed to revert!!! %s", vmName, showTaskErrorMessage(task)));
 			}
 
 			return false;
